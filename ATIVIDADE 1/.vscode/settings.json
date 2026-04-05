@@ -1,0 +1,10 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "clangd.path": "C:\\Users\\lisan\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=c:\\Users\\lisan\\ESP32S3\\ATIVIDADE 1\\build"
+  ],
+  "idf.currentSetup": "C:\\Users\\lisan\\esp\\v5.5\\esp-idf"
+}
