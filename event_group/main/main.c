@@ -125,7 +125,7 @@ void TaskProcessamento(void *pvParameters)
             portMAX_DELAY
         );
         
-        ESP_LOGE("Processamento", "Values received: Sensor1=%.1f, Sensor2=%.1f, Sensor3=%.1f\n", 
+        ESP_LOGI("Processamento", "Values received: Sensor1=%.1f, Sensor2=%.1f, Sensor3=%.1f\n", 
                  valor_sensor1, valor_sensor2, valor_sensor3);
 
         /* Perform simple processing (Sum and Average) */

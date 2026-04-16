@@ -67,7 +67,7 @@ esp_err_t led_rgb_init(led_rgb_t *led, const led_rgb_config_t *config)
     err = ledc_channel_config(&ledc_channel);
     if (err != ESP_OK)
     {
-        vSemaphoreDelete(led->mutex);
+        vSemaphoreDelete(led->mutex);  //DELETA O MUTEX EM CASO DE NAO CONSEGUIR CONFIGURAR O CANAL PWM
         return err;
     }
 
