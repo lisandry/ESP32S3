@@ -105,8 +105,6 @@ static esp_err_t bmp280_read_calibration(void) {
     return ESP_OK;
 }
 
-
-
 /* ========================================================================== */
 /* PUBLIC API IMPLEMENTATION                                                  */
 /* ========================================================================== */
@@ -137,7 +135,6 @@ esp_err_t bmp280_init(const bmp280_config_t *config){
             return ESP_ERR_NO_MEM;
         } 
     }
-
 
     i2c_master_bus_config_t bus_config = {
         .sda_io_num = config->sda_pin,
@@ -260,10 +257,13 @@ esp_err_t bmp280_read_temperature(float *temperature){
 
     int32_t var1_t, var2_t, T; 
     
-    /* Official Bosch Sensortec thermal compensation formula */
-    var1_t = ((((adc_T >> 3) - ((int32_t)calib_params.dig_T1 << 1))) * ((int32_t)calib_params.dig_T2)) >> 11;
+    /* Official Bosch Sensortec thermal compensation formula (< 80 columns) */
+    var1_t = ((((adc_T >> 3) - ((int32_t)calib_params.dig_T1 << 1))) *
+              ((int32_t)calib_params.dig_T2)) >> 11;
              
-    var2_t = (((((adc_T >> 4) - ((int32_t)calib_params.dig_T1)) * ((adc_T >> 4) - ((int32_t)calib_params.dig_T1))) >> 12) * ((int32_t)calib_params.dig_T3)) >> 14;
+    var2_t = (((((adc_T >> 4) - ((int32_t)calib_params.dig_T1)) *
+                ((adc_T >> 4) - ((int32_t)calib_params.dig_T1))) >> 12) *
+              ((int32_t)calib_params.dig_T3)) >> 14;
     
     /* Update global t_fine, vital for subsequent pressure calculations */
     t_fine = var1_t + var2_t;
@@ -321,22 +321,26 @@ esp_err_t bmp280_read_measurements(float *temperature, float *pressure) {
                       ((uint32_t)data[4] << 4)  | 
                       ((uint32_t)data[5] >> 4));
 
-    /* --- Temperature Compensation --- */
-    var1_t = ((((adc_T >> 3) - ((int32_t)calib_params.dig_T1 << 1))) * ((int32_t)calib_params.dig_T2)) >> 11;
+    /* --- Temperature Compensation (< 80 columns) --- */
+    var1_t = ((((adc_T >> 3) - ((int32_t)calib_params.dig_T1 << 1))) *
+              ((int32_t)calib_params.dig_T2)) >> 11;
              
-    var2_t = (((((adc_T >> 4) - ((int32_t)calib_params.dig_T1)) * ((adc_T >> 4) - ((int32_t)calib_params.dig_T1))) >> 12) * ((int32_t)calib_params.dig_T3)) >> 14;
+    var2_t = (((((adc_T >> 4) - ((int32_t)calib_params.dig_T1)) *
+                ((adc_T >> 4) - ((int32_t)calib_params.dig_T1))) >> 12) *
+              ((int32_t)calib_params.dig_T3)) >> 14;
     
     t_fine = var1_t + var2_t; 
     T = (t_fine * 5 + 128) >> 8;
     *temperature = (float)T / 100.0f; 
 
-    /* --- Pressure Compensation (64-bit) --- */
+    /* --- Pressure Compensation (64-bit) (< 80 columns) --- */
     var1_p = ((int64_t)t_fine) - 128000;
     var2_p = var1_p * var1_p * (int64_t)calib_params.dig_P6;
     var2_p = var2_p + ((var1_p * (int64_t)calib_params.dig_P5) << 17);
     var2_p = var2_p + (((int64_t)calib_params.dig_P4) << 35);
     var1_p = ((var1_p * var1_p * (int64_t)calib_params.dig_P3) >> 8) + 
              ((var1_p * (int64_t)calib_params.dig_P2) << 12);
+    
     var1_p = (((((int64_t)1) << 47) + var1_p)) * ((int64_t)calib_params.dig_P1) >> 33;
 
     if (var1_p == 0) {

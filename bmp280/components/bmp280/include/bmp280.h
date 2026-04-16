@@ -24,7 +24,7 @@ extern "C" {
 #endif
 
 /* ========================================================================== */
-/* MACROS & GLOBALS                               */
+/* MACROS & GLOBALS                                                           */
 /* ========================================================================== */
 
 /** @brief I2C address when the SDO pin is tied to GND. */
@@ -33,9 +33,8 @@ extern "C" {
 /** @brief I2C address when the SDO pin is tied to VDD. */
 #define BMP280_I2C_ADDRESS_1  0x77 
 
-
 /* ========================================================================== */
-/* ENUMERATIONS                                 */
+/* ENUMERATIONS                                                               */
 /* ========================================================================== */
 
 /**
@@ -96,7 +95,7 @@ typedef enum {
 } bmp280_standby_time_t;
 
 /* ========================================================================== */
-/* DATA STRUCTURES                                */
+/* DATA STRUCTURES                                                            */
 /* ========================================================================== */
 
 /**
@@ -151,7 +150,7 @@ typedef struct {
 } bmp280_config_t;
 
 /* ========================================================================== */
-/* PUBLIC API FUNCTIONS                           */
+/* PUBLIC API FUNCTIONS                                                       */
 /* ========================================================================== */
 
 /**
@@ -194,7 +193,8 @@ esp_err_t bmp280_force_measurement(void);
  * * Reads the 20-bit raw ADC temperature data and applies the manufacturer's 
  * compensation algorithm using the NVM trimming parameters. 
  * * @note Temperature must always be read before pressure, as the internal 
- * pressure compensation algorithm relies on the fine temperature factor (t_fine).
+ * pressure compensation algorithm relies on the fine temperature factor 
+ * (t_fine).
  * * @param temperature Pointer to a float where the Celsius value will be stored.
  * @return 
  * - ESP_OK: Valid data processed and written to the pointer.
@@ -204,9 +204,9 @@ esp_err_t bmp280_read_temperature(float *temperature);
 /**
  * @brief Performs a burst read for synchronized environmental data.
  * * Highly recommended over individual reads. It executes a single I2C burst 
- * transaction to fetch both raw temperature and pressure registers. This ensures 
- * data consistency (prevents reading temperature from cycle N and pressure 
- * from cycle N+1).
+ * transaction to fetch both raw temperature and pressure registers. This 
+ * ensures data consistency (prevents reading temperature from cycle N and 
+ * pressure from cycle N+1).
  * * @param temperature Pointer to store the compensated Celsius value.
  * @param pressure Pointer to store the compensated Pascals value.
  * @return 
