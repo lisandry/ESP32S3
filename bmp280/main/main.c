@@ -1,3 +1,12 @@
+/**
+ * @file main.c
+ * @brief Main application entry point for BMP280 sensor telemetry.
+ *
+ * @note This file demonstrates how to integrate the custom bmp280 component,
+ * map Kconfig parameters, initialize the I2C bus, and spawn a FreeRTOS task 
+ * for continuous environmental monitoring.
+ */
+
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,6 +16,10 @@
 // Inclui o seu componente recém-criado!
 #include "bmp280.h"
 
+/** @brief Global handle for the BMP280 instance used across tasks. */
+bmp280_t bmp280_handle; 
+
+/** @brief Global tag for system logs. */
 static const char *TAG = "APP_MAIN";
 
 /* ========================================================================== */
@@ -23,6 +36,16 @@ static const char *TAG = "APP_MAIN";
 /* ========================================================================== */
 /* TAREFA DE TEMPO REAL (FREERTOS)                                            */
 /* ========================================================================== */
+
+/**
+ * @brief FreeRTOS task dedicated to polling the BMP280 sensor.
+ *
+ * @details This task runs continuously in an infinite loop, querying the 
+ * sensor for synchronized temperature and pressure data using burst reads,
+ * printing the results, and yielding the CPU to other tasks.
+ *
+ * @param pvParameters Pointer to parameters passed during task creation (unused).
+ */
 void bmp280_monitoring_task(void *pvParameters) {
     float temperature = 0.0f;
     float pressure = 0.0f;
@@ -33,7 +56,7 @@ void bmp280_monitoring_task(void *pvParameters) {
     // Loop infinito da tarefa (o famoso "tempo real")
     while (1) {
         // Usa a função de burst read que criamos para pegar os dados sincronizados
-        err = bmp280_read_measurements(&temperature, &pressure);
+        err = bmp280_read_measurements(&bmp280_handle, &temperature, &pressure);
         
         if (err == ESP_OK) {
             // Imprime no terminal de forma amigável
@@ -51,6 +74,15 @@ void bmp280_monitoring_task(void *pvParameters) {
 /* ========================================================================== */
 /* FUNÇÃO PRINCIPAL DO SISTEMA                                                */
 /* ========================================================================== */
+
+/**
+ * @brief Main execution entry point.
+ *
+ * @details Initializes system logging, maps configuration parameters provided 
+ * by the ESP-IDF Menuconfig to the sensor structure, initializes the I2C bus,
+ * configures the sensor's hardware registers, and finally spawns the 
+ * FreeRTOS monitoring task.
+ */
 void app_main(void) {
     // Opcional: Você pode usar a tag existente ou criar uma só para esse teste
     const char *CFG_TAG = "TESTE_KCONFIG";
@@ -98,11 +130,11 @@ void app_main(void) {
     // 3. Monta o barramento I2C e verifica se o sensor responde (Lê calibração)
     // O ESP_ERROR_CHECK vai abortar e reiniciar o chip caso o sensor não seja detectado.
     ESP_LOGI(TAG, "Provisionando o barramento I2C e lendo calibração de fábrica...");
-    ESP_ERROR_CHECK(bmp280_init(&sensor_cfg));
+    ESP_ERROR_CHECK(bmp280_init(&bmp280_handle, &sensor_cfg));
 
     // 4. Injeta os parâmetros de filtro e resolução nos registradores do chip
     ESP_LOGI(TAG, "Gravando registradores de configuração (Oversampling, Filter, Mode)...");
-    ESP_ERROR_CHECK(bmp280_set_config(&sensor_cfg));
+    ESP_ERROR_CHECK(bmp280_set_config(&bmp280_handle, &sensor_cfg));
 
     ESP_LOGI(TAG, "BMP280 inicializado com sucesso!");
 

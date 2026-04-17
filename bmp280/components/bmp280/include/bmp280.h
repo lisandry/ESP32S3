@@ -13,7 +13,6 @@
 #include <stdio.h>
 #include "esp_log.h"
 #include "esp_err.h"
-#include "driver/i2c.h"
 #include "driver/i2c_master.h"
 #include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
@@ -99,6 +98,43 @@ typedef enum {
 /* ========================================================================== */
 
 /**
+ * @brief Hardware and operational configuration profile.
+ * * Aggregates physical connection parameters (I2C pins, frequency) and 
+ * logical behavior (filters, modes). Passing this single structure simplifies 
+ * the API initialization contract.
+ */
+typedef struct {
+    int sda_pin;           /**< GPIO pin mapped to the I2C SDA line. */
+    int scl_pin;           /**< GPIO pin mapped to the I2C SCL line. */
+
+    uint8_t i2c_port;      /**< Target I2C peripheral instance. */
+    uint8_t i2c_addr;      /**< Target device address on the bus. */
+    uint32_t i2c_freq_hz;  /**< SCL clock frequency. */
+
+    bmp280_mode_t mode;                               /**< Initial power mode. */
+    bmp280_oversampling_t oversampling_temperature;   /**< Temp resolution. */
+    bmp280_filter_t filter;                           /**< IIR step response. */
+    bmp280_standby_time_t standby_time;               /**< Sleep between reads. */
+    bmp280_oversampling_t oversampling_pressure;      /**< Pressure resolution. */   
+} bmp280_config_t;
+
+/**
+ * @brief Main device structure for runtime state and synchronization.
+ * * Contains the user configuration for reference and a Mutex handle to 
+ * ensure thread-safe access to the I2C bus and the global t_fine variable 
+ * used in compensation calculations.
+ */
+typedef struct {
+    bmp280_config_t config;             /**< Current hardware and logical configuration. */
+    SemaphoreHandle_t mutex;            /**< Mutex for thread-safe access to the sensor. */
+    int32_t t_fine;                     /**< Calibration bridge between temp and pressure. */
+    bmp280_calib_data calibration;      /**< Unique factory trimming parameters. */
+    
+    i2c_master_bus_handle_t bus_handle; /**< I2C physical bus handle. */
+    i2c_master_dev_handle_t dev_handle; /**< I2C device handle specific to this instance. */
+} bmp280_t;
+
+/**
  * @brief Factory trimming parameters for data compensation.
  * * Sensors exhibit minor manufacturing variations. These parameters are 
  * read from the chip's Non-Volatile Memory (NVM) during initialization and 
@@ -128,27 +164,6 @@ typedef struct {
     int8_t   dig_H6;
 } bmp280_calib_data;
 
-/**
- * @brief Hardware and operational configuration profile.
- * * Aggregates physical connection parameters (I2C pins, frequency) and 
- * logical behavior (filters, modes). Passing this single structure simplifies 
- * the API initialization contract.
- */
-typedef struct {
-    int sda_pin;           /**< GPIO pin mapped to the I2C SDA line. */
-    int scl_pin;           /**< GPIO pin mapped to the I2C SCL line. */
-
-    uint8_t i2c_port;      /**< Target I2C peripheral instance. */
-    uint8_t i2c_addr;      /**< Target device address on the bus. */
-    uint32_t i2c_freq_hz;  /**< SCL clock frequency. */
-
-    bmp280_mode_t mode;                               /**< Initial power mode. */
-    bmp280_oversampling_t oversampling_temperature;   /**< Temp resolution. */
-    bmp280_filter_t filter;                           /**< IIR step response. */
-    bmp280_standby_time_t standby_time;               /**< Sleep between reads. */
-    bmp280_oversampling_t oversampling_pressure;      /**< Pressure resolution. */   
-} bmp280_config_t;
-
 /* ========================================================================== */
 /* PUBLIC API FUNCTIONS                                                       */
 /* ========================================================================== */
@@ -158,35 +173,38 @@ typedef struct {
  * * Acts as the hardware entry point. It creates the I2C master bus, probes 
  * the designated address, verifies the WHO_AM_I chip ID (0x58), and downloads 
  * the trimming parameters (calibration data) needed for future compensations.
- * * @param config Pointer to the configuration profile to be applied.
+ * * @param bmp280 Pointer to the main device structure.
+ * @param config Pointer to the configuration profile to be applied.
  * @return 
  * - ESP_OK: Hardware connected, authenticated, and calibrated.
  * - ESP_ERR_NOT_FOUND: Chip ID mismatch (hardware failure or wrong chip).
  * - ESP_ERR_INVALID_ARG: Null pointer passed as configuration.
  */
-esp_err_t bmp280_init(const bmp280_config_t *config);
+esp_err_t bmp280_init(bmp280_t *bmp280, const bmp280_config_t *config);
 
 /**
  * @brief Writes operational parameters to the control registers.
  * * Translates the configuration struct enums into bitwise operations and 
  * dispatches them via I2C to the 'ctrl_meas' (0xF4) and 'config' (0xF5) 
  * registers. This dictates how the ADC processes the environment.
- * * @param config Pointer to the structure containing the desired parameters.
+ * * @param bmp280 Pointer to the main device structure.
+ * @param config Pointer to the structure containing the desired parameters.
  * @return 
  * - ESP_OK: Registers successfully updated.
  * - ESP_FAIL: I2C transmission error.
  */
-esp_err_t bmp280_set_config(const bmp280_config_t *config);
+esp_err_t bmp280_set_config(bmp280_t *bmp280, const bmp280_config_t *config);
 
 /**
  * @brief Triggers a manual read cycle in FORCED mode.
  * * When operating in FORCED mode to save battery, the sensor remains asleep.
  * Calling this function overrides the mode register to trigger a single ADC 
  * conversion cycle. The sensor automatically returns to sleep afterward.
- * * @return 
+ * * @param bmp280 Pointer to the main device structure.
+ * @return 
  * - ESP_OK: Measurement successfully triggered.
  */
-esp_err_t bmp280_force_measurement(void);
+esp_err_t bmp280_force_measurement(bmp280_t *bmp280);
 
 /**
  * @brief Retrieves and compensates the latest temperature reading.
@@ -195,11 +213,12 @@ esp_err_t bmp280_force_measurement(void);
  * * @note Temperature must always be read before pressure, as the internal 
  * pressure compensation algorithm relies on the fine temperature factor 
  * (t_fine).
- * * @param temperature Pointer to a float where the Celsius value will be stored.
+ * * @param bmp280 Pointer to the main device structure.
+ * @param temperature Pointer to a float where the Celsius value will be stored.
  * @return 
  * - ESP_OK: Valid data processed and written to the pointer.
  */
-esp_err_t bmp280_read_temperature(float *temperature);
+esp_err_t bmp280_read_temperature(bmp280_t *bmp280, float *temperature);
 
 /**
  * @brief Performs a burst read for synchronized environmental data.
@@ -207,21 +226,23 @@ esp_err_t bmp280_read_temperature(float *temperature);
  * transaction to fetch both raw temperature and pressure registers. This 
  * ensures data consistency (prevents reading temperature from cycle N and 
  * pressure from cycle N+1).
- * * @param temperature Pointer to store the compensated Celsius value.
+ * * @param bmp280 Pointer to the main device structure.
+ * @param temperature Pointer to store the compensated Celsius value.
  * @param pressure Pointer to store the compensated Pascals value.
  * @return 
  * - ESP_OK: Burst read and compensation successful.
  */
-esp_err_t bmp280_read_measurements(float *temperature, float *pressure);
+esp_err_t bmp280_read_measurements(bmp280_t *bmp280, float *temperature, float *pressure);
 
 /**
  * @brief Safely tears down the I2C bus and releases memory.
  * * Prevents memory leaks during hot-reloads or deep sleep preparations. 
  * It removes the device instance and then deletes the master bus instance.
- * * @return 
+ * * @param bmp280 Pointer to the main device structure.
+ * @return 
  * - ESP_OK: System resources cleanly released.
  */
-esp_err_t bmp280_deinit(void);
+esp_err_t bmp280_deinit(bmp280_t *bmp280);
 
 #ifdef __cplusplus
 }

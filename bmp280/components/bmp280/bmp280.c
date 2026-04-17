@@ -9,8 +9,6 @@
 
 #include "bmp280.h"
 
-static SemaphoreHandle_t i2c_mutex = NULL;
-
 /* ========================================================================== */
 /* INTERNAL REGISTER MAP (Hardware Registers)                                 */
 /* ========================================================================== */
@@ -43,27 +41,8 @@ static SemaphoreHandle_t i2c_mutex = NULL;
 /* PRIVATE GLOBAL VARIABLES (Encapsulated with 'static')                      */
 /* ========================================================================== */
 
-/** * @brief I2C master bus handle. 
- * @note Static keyword prevents linker multiple definition errors.
- */
-static i2c_master_bus_handle_t bus_handle = NULL;
-
-/** * @brief BMP280 device handle on the I2C bus. 
- * @note Static ensures exclusive internal use within this file.
- */
-static i2c_master_dev_handle_t dev_handle = NULL;
-
 /** @brief Tags for ESP-IDF terminal logging identification. */
-static const char *TAG = "BMP280_INIT";
-
-/** @brief Structure holding the 24 bytes of factory calibration data. */
-static bmp280_calib_data calib_params; 
-
-/** * @brief Fine temperature factor (t_fine). 
- * @note Acts as a mathematical bridge; the pressure compensation formula 
- * strictly requires the exact temperature measured at the same instant.
- */
-static int32_t t_fine;
+static const char *TAG = "BMP280_DRV";
 
 /* ========================================================================== */
 /* PRIVATE FUNCTIONS                                                          */
@@ -79,29 +58,36 @@ static int32_t t_fine;
  * - ESP_OK: Calibration data read and parsed successfully.
  * - Non-zero: I2C communication failure.
  */
-static esp_err_t bmp280_read_calibration(void) {
+static esp_err_t bmp280_read_calibration(bmp280_t *bmp280) {
     uint8_t reg_addr = BMP280_REG_CALIB;
     uint8_t data[24];
 
-    esp_err_t err = i2c_master_transmit_receive(dev_handle, &reg_addr, 1, 
-                                                data, 24, -1);
-    if (err != ESP_OK) return err;
+    esp_err_t err = i2c_master_transmit_receive(bmp280->dev_handle, &reg_addr, 1, 
+                                                data, 24, 100);
+    if (err != ESP_OK) 
+    {
+        ESP_LOGE("READ", "Failed to read calibration data");
+
+        return err;
+    }
+    ESP_LOGE("READ", "1");
 
     /* Reconstruct 16-bit integers by combining MSB and LSB */
-    calib_params.dig_T1 = (uint16_t)((data[1] << 8) | data[0]);
-    calib_params.dig_T2 = (int16_t) ((data[3] << 8) | data[2]);
-    calib_params.dig_T3 = (int16_t) ((data[5] << 8) | data[4]);
+    bmp280->calibration.dig_T1 = (uint16_t)((data[1] << 8) | data[0]);
+    bmp280->calibration.dig_T2 = (int16_t) ((data[3] << 8) | data[2]);
+    bmp280->calibration.dig_T3 = (int16_t) ((data[5] << 8) | data[4]);
 
-    calib_params.dig_P1 = (uint16_t)((data[7] << 8) | data[6]);
-    calib_params.dig_P2 = (int16_t) ((data[9] << 8) | data[8]);
-    calib_params.dig_P3 = (int16_t) ((data[11] << 8) | data[10]);
-    calib_params.dig_P4 = (int16_t) ((data[13] << 8) | data[12]);
-    calib_params.dig_P5 = (int16_t) ((data[15] << 8) | data[14]);
-    calib_params.dig_P6 = (int16_t) ((data[17] << 8) | data[16]);
-    calib_params.dig_P7 = (int16_t) ((data[19] << 8) | data[18]);
-    calib_params.dig_P8 = (int16_t) ((data[21] << 8) | data[20]);
-    calib_params.dig_P9 = (int16_t) ((data[23] << 8) | data[22]);
+    bmp280->calibration.dig_P1 = (uint16_t)((data[7] << 8) | data[6]);
+    bmp280->calibration.dig_P2 = (int16_t) ((data[9] << 8) | data[8]);
+    bmp280->calibration.dig_P3 = (int16_t) ((data[11] << 8) | data[10]);
+    bmp280->calibration.dig_P4 = (int16_t) ((data[13] << 8) | data[12]);
+    bmp280->calibration.dig_P5 = (int16_t) ((data[15] << 8) | data[14]);
+    bmp280->calibration.dig_P6 = (int16_t) ((data[17] << 8) | data[16]);
+    bmp280->calibration.dig_P7 = (int16_t) ((data[19] << 8) | data[18]);
+    bmp280->calibration.dig_P8 = (int16_t) ((data[21] << 8) | data[20]);
+    bmp280->calibration.dig_P9 = (int16_t) ((data[23] << 8) | data[22]);
 
+    ESP_LOGE("READ", "FIM");
     return ESP_OK;
 }
 
@@ -115,25 +101,29 @@ static esp_err_t bmp280_read_calibration(void) {
  * @param config Pointer to the user-defined configuration profile.
  * @return esp_err_t ESP_OK on success, or specific error code.
  */
-esp_err_t bmp280_init(const bmp280_config_t *config){
+esp_err_t bmp280_init(bmp280_t *bmp280, const bmp280_config_t *config){
     esp_err_t err;
-
-    if (config == NULL) {
-        ESP_LOGE(TAG, "Error: Null configuration pointer.");
+    if(!bmp280 || !config) {
+        ESP_LOGE(TAG, "Invalid argument: NULL pointer provided.");
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (!GPIO_IS_VALID_GPIO(config->sda_pin) || 
-        !GPIO_IS_VALID_GPIO(config->scl_pin)) {
-        ESP_LOGE(TAG, "Error: Invalid I2C pins.");
+    if(!GPIO_IS_VALID_GPIO(config->sda_pin) || 
+       !GPIO_IS_VALID_GPIO(config->scl_pin)) {
+        ESP_LOGE(TAG, "Invalid GPIO pins: SDA=%d, SCL=%d", config->sda_pin, config->scl_pin);
         return ESP_ERR_INVALID_ARG;
     }
 
-    if (i2c_mutex == NULL) {
-        i2c_mutex = xSemaphoreCreateMutex();
-        if (i2c_mutex == NULL){
-            return ESP_ERR_NO_MEM;
-        } 
+    bmp280->config = *config; // Store user config in the struct for later use
+    bmp280->t_fine = 0; // Reset compensation bridge variable
+    bmp280->bus_handle = NULL; // Initialize bus handle to NULL
+    bmp280->dev_handle = NULL; // Initialize device handle to NULL  
+    
+    bmp280->mutex = xSemaphoreCreateMutex();
+
+    if (bmp280->mutex == NULL) {
+        ESP_LOGE(TAG, "Error: Failed to create mutex.");
+        return ESP_ERR_NO_MEM;
     }
 
     i2c_master_bus_config_t bus_config = {
@@ -142,23 +132,33 @@ esp_err_t bmp280_init(const bmp280_config_t *config){
         .i2c_port = config->i2c_port,
         .glitch_ignore_cnt = 7,
         .clk_source = I2C_CLK_SRC_DEFAULT,
+        .flags.enable_internal_pullup = true,
     };
 
-    err = i2c_new_master_bus(&bus_config, &bus_handle);
-    if (err != ESP_OK) return err;
-
+    err = i2c_new_master_bus(&bus_config, &bmp280->bus_handle);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Error: Failed to create I2C master bus.");
+        return err;
+    }
+    
     i2c_device_config_t dev_config = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = config->i2c_addr,
         .scl_speed_hz = config->i2c_freq_hz,
-    };
+    };  
 
-    err = i2c_master_bus_add_device(bus_handle, &dev_config, &dev_handle);
-    if (err != ESP_OK) return err;
+    err = i2c_master_bus_add_device(bmp280->bus_handle, &dev_config, &bmp280->dev_handle);
+    if (err != ESP_OK){
+        ESP_LOGE(TAG, "Error: Failed to add device to I2C bus.");
+        return err;
+    }
 
-    /* Mandatory read to prevent temperature calculation yielding 0.00 */
-    err = bmp280_read_calibration();
-    if (err != ESP_OK) return err;
+    err = bmp280_read_calibration(bmp280);
+    if (err != ESP_OK){
+        ESP_LOGE(TAG, "Error: Failed to read calibration data.");
+        return err;
+    }   
 
     return ESP_OK;
 }
@@ -169,11 +169,20 @@ esp_err_t bmp280_init(const bmp280_config_t *config){
  * @param config Pointer to the struct containing user preferences.
  * @return esp_err_t ESP_OK if registers were successfully written.
  */
-esp_err_t bmp280_set_config(const bmp280_config_t *config) {
+esp_err_t bmp280_set_config(bmp280_t *bmp280, const bmp280_config_t *config) {
     esp_err_t err;
 
-    if (config == NULL) return ESP_ERR_INVALID_ARG;
-    if (dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+    if(!bmp280 || !config) {
+        ESP_LOGE(TAG, "Invalid argument: NULL pointer provided.");  
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if(bmp280->dev_handle == NULL) {
+        ESP_LOGE(TAG, "Invalid state: Device handle is NULL. Ensure bmp280_init() was successful.");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(bmp280->mutex, portMAX_DELAY);
 
     uint8_t tx_buffer[2];
 
@@ -184,8 +193,12 @@ esp_err_t bmp280_set_config(const bmp280_config_t *config) {
     tx_buffer[0] = BMP280_REG_CONFIG;
     tx_buffer[1] = reg_config_val;
 
-    err = i2c_master_transmit(dev_handle, tx_buffer, 2, -1);
-    if (err != ESP_OK) return err;
+    err = i2c_master_transmit(bmp280->dev_handle, tx_buffer, 2, -1);
+    if (err != ESP_OK){
+        xSemaphoreGive(bmp280->mutex);
+        ESP_LOGE(TAG, "Error: Failed to write CONFIG register.");
+        return err;
+    }
 
     /* Assemble CTRL_MEAS register byte (0xF4) */
     uint8_t reg_ctrl_meas_val = (config->oversampling_temperature << 5) | 
@@ -195,8 +208,13 @@ esp_err_t bmp280_set_config(const bmp280_config_t *config) {
     tx_buffer[0] = BMP280_REG_CTRL; 
     tx_buffer[1] = reg_ctrl_meas_val;
     
-    err = i2c_master_transmit(dev_handle, tx_buffer, 2, -1);
-    if (err != ESP_OK) return err;
+    err = i2c_master_transmit(bmp280->dev_handle, tx_buffer, 2, -1);
+    if (err != ESP_OK){
+        ESP_LOGE(TAG, "Error: Failed to write CTRL_MEAS register.");
+        return err;
+    }
+
+    xSemaphoreGive(bmp280->mutex);
 
     return ESP_OK;
 }
@@ -209,17 +227,29 @@ esp_err_t bmp280_set_config(const bmp280_config_t *config) {
  *
  * @return esp_err_t ESP_OK if the wake-up command was dispatched.
  */
-esp_err_t bmp280_force_measurement(void){
-    if (dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t bmp280_force_measurement(bmp280_t *bmp280){
+    if(!bmp280){
+        ESP_LOGE(TAG, "Invalid argument: NULL pointer provided.");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (bmp280->dev_handle == NULL) {
+        ESP_LOGE(TAG, "Invalid state: Device handle is NULL. Ensure bmp280_init() was successful.");
+        return ESP_ERR_INVALID_STATE;
+    }
 
     esp_err_t err;
     uint8_t reg_addr = BMP280_REG_CTRL; 
     uint8_t ctrl_meas_val;
 
     /* Step 1: Read current state to preserve oversampling bits */
-    err = i2c_master_transmit_receive(dev_handle, &reg_addr, 1, 
+    err = i2c_master_transmit_receive(bmp280->dev_handle, &reg_addr, 1, 
                                       &ctrl_meas_val, 1, -1);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK){
+        ESP_LOGE(TAG, "Error: Failed to read CTRL_MEAS register.");
+        return err;
+    }
+    
 
     /* Step 2: Clear the 2 mode bits and inject FORCED mode */
     ctrl_meas_val = (ctrl_meas_val & ~0x03) | BMP280_MODE_FORCED;
@@ -227,8 +257,13 @@ esp_err_t bmp280_force_measurement(void){
     /* Step 3: Write modified byte back to sensor */
     uint8_t tx_buffer[2] = { BMP280_REG_CTRL, ctrl_meas_val };
 
-    err = i2c_master_transmit(dev_handle, tx_buffer, 2, -1);
-    if (err != ESP_OK) return err;
+    err = i2c_master_transmit(bmp280->dev_handle, tx_buffer, 2, -1);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error: Failed to write CTRL_MEAS register.");
+        return err;
+    }
+
+    xSemaphoreGive(bmp280->mutex);
 
     return ESP_OK;
 }
@@ -239,16 +274,26 @@ esp_err_t bmp280_force_measurement(void){
  * @param temperature Pointer to store the calculated Celsius value.
  * @return esp_err_t ESP_OK upon successful read and computation.
  */
-esp_err_t bmp280_read_temperature(float *temperature){
-    if (temperature == NULL) return ESP_ERR_INVALID_ARG;
-    if (dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t bmp280_read_temperature(bmp280_t *bmp280, float *temperature){
+    if(!bmp280 || !temperature){
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if(bmp280->dev_handle == NULL){
+        return ESP_ERR_INVALID_STATE;
+    }
 
     esp_err_t err;
     uint8_t reg_addr = BMP280_REG_TEMP_MSB; 
     uint8_t data[3];
 
-    err = i2c_master_transmit_receive(dev_handle, &reg_addr, 1, data, 3, -1);
-    if (err != ESP_OK) return err;
+    xSemaphoreTake(bmp280->mutex, portMAX_DELAY);
+
+    err = i2c_master_transmit_receive(bmp280->dev_handle, &reg_addr, 1, data, 3, -1);
+    if (err != ESP_OK) {
+        xSemaphoreGive(bmp280->mutex);
+        return err;
+    }
 
     /* Concatenate 3 bytes into a raw 20-bit integer */
     int32_t adc_T = (int32_t)(((uint32_t)data[0] << 12) | 
@@ -258,19 +303,21 @@ esp_err_t bmp280_read_temperature(float *temperature){
     int32_t var1_t, var2_t, T; 
     
     /* Official Bosch Sensortec thermal compensation formula (< 80 columns) */
-    var1_t = ((((adc_T >> 3) - ((int32_t)calib_params.dig_T1 << 1))) *
-              ((int32_t)calib_params.dig_T2)) >> 11;
+    var1_t = ((((adc_T >> 3) - ((int32_t)bmp280->calibration.dig_T1 << 1))) *
+              ((int32_t)bmp280->calibration.dig_T2)) >> 11;
              
-    var2_t = (((((adc_T >> 4) - ((int32_t)calib_params.dig_T1)) *
-                ((adc_T >> 4) - ((int32_t)calib_params.dig_T1))) >> 12) *
-              ((int32_t)calib_params.dig_T3)) >> 14;
+    var2_t = (((((adc_T >> 4) - ((int32_t)bmp280->calibration.dig_T1)) *
+                ((adc_T >> 4) - ((int32_t)bmp280->calibration.dig_T1))) >> 12) *
+              ((int32_t)bmp280->calibration.dig_T3)) >> 14;
     
     /* Update global t_fine, vital for subsequent pressure calculations */
-    t_fine = var1_t + var2_t;
-    T = (t_fine * 5 + 128) >> 8;
+    bmp280->t_fine = var1_t + var2_t;
+    T = (bmp280->t_fine * 5 + 128) >> 8;
     
     /* Convert fractionary output to standard float (e.g., 2512 -> 25.12 C) */
     *temperature = (float)T / 100.0f;
+
+    xSemaphoreGive(bmp280->mutex);
 
     return ESP_OK;
 }
@@ -285,9 +332,18 @@ esp_err_t bmp280_read_temperature(float *temperature){
  * @param pressure Pointer to store the compensated Pascals value.
  * @return esp_err_t ESP_OK on success, or ESP_ERR_TIMEOUT if bus is busy.
  */
-esp_err_t bmp280_read_measurements(float *temperature, float *pressure) {
-    if (temperature == NULL || pressure == NULL) return ESP_ERR_INVALID_ARG;
-    if (dev_handle == NULL) return ESP_ERR_INVALID_STATE;
+esp_err_t bmp280_read_measurements(bmp280_t *bmp280, float *temperature, float *pressure) {
+    if(!bmp280 || !temperature || !pressure){
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (bmp280->dev_handle == NULL){
+         return ESP_ERR_INVALID_STATE;
+    }
+
+    if (xSemaphoreTake(bmp280->mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        return ESP_ERR_TIMEOUT;
+    }
 
     /* 1. Declare all variables at the beginning of the scope */
     esp_err_t err;
@@ -297,18 +353,10 @@ esp_err_t bmp280_read_measurements(float *temperature, float *pressure) {
     int32_t var1_t, var2_t, T;
     int64_t var1_p, var2_p, p;
 
-    /* 2. Take Mutex to protect I2C transaction and global t_fine */
-    if (i2c_mutex != NULL) {
-        if (xSemaphoreTake(i2c_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
-            return ESP_ERR_TIMEOUT;
-        }
-    }
-
     /* 3. Perform I2C burst read */
-    err = i2c_master_transmit_receive(dev_handle, &reg_addr, 1, data, 6, -1);
-    
+    err = i2c_master_transmit_receive(bmp280->dev_handle, &reg_addr, 1, data, 6, -1);
     if (err != ESP_OK) {
-        if (i2c_mutex != NULL) xSemaphoreGive(i2c_mutex);
+        xSemaphoreGive(bmp280->mutex);
         return err;
     }
 
@@ -322,43 +370,40 @@ esp_err_t bmp280_read_measurements(float *temperature, float *pressure) {
                       ((uint32_t)data[5] >> 4));
 
     /* --- Temperature Compensation (< 80 columns) --- */
-    var1_t = ((((adc_T >> 3) - ((int32_t)calib_params.dig_T1 << 1))) *
-              ((int32_t)calib_params.dig_T2)) >> 11;
+    var1_t = ((((adc_T >> 3) - ((int32_t)bmp280->calibration.dig_T1 << 1))) *
+              ((int32_t)bmp280->calibration.dig_T2)) >> 11;
              
-    var2_t = (((((adc_T >> 4) - ((int32_t)calib_params.dig_T1)) *
-                ((adc_T >> 4) - ((int32_t)calib_params.dig_T1))) >> 12) *
-              ((int32_t)calib_params.dig_T3)) >> 14;
+    var2_t = (((((adc_T >> 4) - ((int32_t)bmp280->calibration.dig_T1)) *
+                ((adc_T >> 4) - ((int32_t)bmp280->calibration.dig_T1))) >> 12) *
+              ((int32_t)bmp280->calibration.dig_T3)) >> 14;
     
-    t_fine = var1_t + var2_t; 
-    T = (t_fine * 5 + 128) >> 8;
+    bmp280->t_fine = var1_t + var2_t; 
+    T = (bmp280->t_fine * 5 + 128) >> 8;
     *temperature = (float)T / 100.0f; 
 
     /* --- Pressure Compensation (64-bit) (< 80 columns) --- */
-    var1_p = ((int64_t)t_fine) - 128000;
-    var2_p = var1_p * var1_p * (int64_t)calib_params.dig_P6;
-    var2_p = var2_p + ((var1_p * (int64_t)calib_params.dig_P5) << 17);
-    var2_p = var2_p + (((int64_t)calib_params.dig_P4) << 35);
-    var1_p = ((var1_p * var1_p * (int64_t)calib_params.dig_P3) >> 8) + 
-             ((var1_p * (int64_t)calib_params.dig_P2) << 12);
+    var1_p = ((int64_t) bmp280->t_fine - 128000);
+    var2_p = var1_p * var1_p * (int64_t)bmp280->calibration.dig_P6;
+    var2_p = var2_p + ((var1_p * (int64_t)bmp280->calibration.dig_P5) << 17);
+    var2_p = var2_p + (((int64_t)bmp280->calibration.dig_P4) << 35);
+    var1_p = ((var1_p * var1_p * (int64_t)bmp280->calibration.dig_P3) >> 8) + 
+             ((var1_p * (int64_t)bmp280->calibration.dig_P2) << 12);
     
-    var1_p = (((((int64_t)1) << 47) + var1_p)) * ((int64_t)calib_params.dig_P1) >> 33;
+    var1_p = (((((int64_t)1) << 47) + var1_p)) * ((int64_t)bmp280->calibration.dig_P1) >> 33;
 
     if (var1_p == 0) {
-        if (i2c_mutex != NULL) xSemaphoreGive(i2c_mutex);
+        xSemaphoreGive(bmp280->mutex);
         return ESP_FAIL; 
     }
 
     p = 1048576 - adc_P;
     p = (((p << 31) - var2_p) * 3125) / var1_p;
-    var1_p = (((int64_t)calib_params.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
-    var2_p = (((int64_t)calib_params.dig_P8) * p) >> 19;
-    p = ((p + var1_p + var2_p) >> 8) + (((int64_t)calib_params.dig_P7) << 4);
+    var1_p = (((int64_t)bmp280->calibration.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+    var2_p = (((int64_t)bmp280->calibration.dig_P8) * p) >> 19;
+    p = ((p + var1_p + var2_p) >> 8) + (((int64_t)bmp280->calibration.dig_P7) << 4);
     *pressure = (float)p / 256.0f;
 
-    /* 5. Release Mutex */
-    if (i2c_mutex != NULL) {
-        xSemaphoreGive(i2c_mutex);
-    }
+    xSemaphoreGive(bmp280->mutex);
 
     return ESP_OK;
 }
@@ -371,29 +416,38 @@ esp_err_t bmp280_read_measurements(float *temperature, float *pressure) {
  *
  * @return esp_err_t ESP_OK upon safe destruction of handles.
  */
-esp_err_t bmp280_deinit(void) {
-    esp_err_t err;
-
-    if (i2c_mutex != NULL) {
-        vSemaphoreDelete(i2c_mutex);
-        i2c_mutex = NULL;
+esp_err_t bmp280_deinit(bmp280_t *bmp280) {
+    if(!bmp280){
+        return ESP_ERR_INVALID_ARG;
     }
 
+    esp_err_t err;
+
+    xSemaphoreTake(bmp280->mutex, portMAX_DELAY);
+
     /* 1. Remove logical device from the bus */
-    if (dev_handle != NULL) {
-        err = i2c_master_bus_rm_device(dev_handle);
-        if (err != ESP_OK) return err;
-        
-        dev_handle = NULL; /* Prevent dangling pointers */
+    if (bmp280->dev_handle != NULL) {
+        err = i2c_master_bus_rm_device(bmp280->dev_handle);
+        if (err != ESP_OK) {
+            xSemaphoreGive(bmp280->mutex);
+            return err;
+        }
+        bmp280->dev_handle = NULL; /* Prevent dangling pointers */
     }
 
     /* 2. Physically destroy the main I2C bus, freeing FreeRTOS memory */
-    if (bus_handle != NULL) {
-        err = i2c_del_master_bus(bus_handle);
-        if (err != ESP_OK) return err;
-        
-        bus_handle = NULL; 
+    if (bmp280->bus_handle != NULL) {
+        err = i2c_del_master_bus(bmp280->bus_handle);
+        if (err != ESP_OK){
+            xSemaphoreGive(bmp280->mutex);
+            return err;
+        }
+        bmp280->bus_handle = NULL; 
     }
+
+    xSemaphoreGive(bmp280->mutex);
+    vSemaphoreDelete(bmp280->mutex);
+    bmp280->mutex = NULL;
 
     return ESP_OK;
 }
