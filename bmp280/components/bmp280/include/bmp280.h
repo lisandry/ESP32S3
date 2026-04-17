@@ -38,7 +38,7 @@ extern "C" {
 
 /**
  * @brief Power operation modes for the sensor.
- * * Choosing the right mode is critical for battery-powered applications. 
+ * * @details Choosing the right mode is critical for battery-powered applications. 
  * FORCED mode is ideal for low-power operation as the sensor sleeps natively, 
  * waking up only when the host requests a single measurement.
  */
@@ -50,7 +50,7 @@ typedef enum {
 
 /**
  * @brief Hardware oversampling settings.
- * * Defines how many internal reads the ADC performs to generate one output 
+ * * @details Defines how many internal reads the ADC performs to generate one output 
  * sample. Higher oversampling reduces noise (higher resolution) but increases 
  * current consumption and measurement time.
  */
@@ -65,7 +65,7 @@ typedef enum {
 
 /**
  * @brief IIR Filter coefficients.
- * * The built-in Infinite Impulse Response (IIR) filter minimizes short-term 
+ * * @details The built-in Infinite Impulse Response (IIR) filter minimizes short-term 
  * disturbances in pressure readings (e.g., wind gusts or slamming doors).
  * Essential for indoor navigation or altitude holding in drones.
  */
@@ -79,7 +79,7 @@ typedef enum {
 
 /**
  * @brief Standby timing for NORMAL mode.
- * * Determines the sleep duration between continuous automated measurements.
+ * * @details Determines the sleep duration between continuous automated measurements.
  * Used alongside oversampling to calculate the total data output rate.
  */
 typedef enum {
@@ -99,7 +99,7 @@ typedef enum {
 
 /**
  * @brief Hardware and operational configuration profile.
- * * Aggregates physical connection parameters (I2C pins, frequency) and 
+ * * @details Aggregates physical connection parameters (I2C pins, frequency) and 
  * logical behavior (filters, modes). Passing this single structure simplifies 
  * the API initialization contract.
  */
@@ -120,7 +120,7 @@ typedef struct {
 
 /**
  * @brief Factory trimming parameters for data compensation.
- * * Sensors exhibit minor manufacturing variations. These parameters are 
+ * * @details Sensors exhibit minor manufacturing variations. These parameters are 
  * read from the chip's Non-Volatile Memory (NVM) during initialization and 
  * are strictly required by the Bosch mathematical formulas to convert raw 
  * ADC data into accurate Celsius and Pascal values.
@@ -150,7 +150,7 @@ typedef struct {
 
 /**
  * @brief Main device structure for runtime state and synchronization.
- * * Contains the user configuration for reference and a Mutex handle to 
+ * * @details Contains the user configuration for reference and a Mutex handle to 
  * ensure thread-safe access to the I2C bus and the global t_fine variable 
  * used in compensation calculations.
  */
@@ -164,15 +164,13 @@ typedef struct {
     i2c_master_dev_handle_t dev_handle; /**< I2C device handle specific to this instance. */
 } bmp280_t;
 
-
-
 /* ========================================================================== */
 /* PUBLIC API FUNCTIONS                                                       */
 /* ========================================================================== */
 
 /**
  * @brief Provisions the I2C bus and verifies sensor authenticity.
- * * Acts as the hardware entry point. It creates the I2C master bus, probes 
+ * * @details Acts as the hardware entry point. It creates the I2C master bus, probes 
  * the designated address, verifies the WHO_AM_I chip ID (0x58), and downloads 
  * the trimming parameters (calibration data) needed for future compensations.
  * * @param bmp280 Pointer to the main device structure.
@@ -186,7 +184,7 @@ esp_err_t bmp280_init(bmp280_t *bmp280, const bmp280_config_t *config);
 
 /**
  * @brief Writes operational parameters to the control registers.
- * * Translates the configuration struct enums into bitwise operations and 
+ * * @details Translates the configuration struct enums into bitwise operations and 
  * dispatches them via I2C to the 'ctrl_meas' (0xF4) and 'config' (0xF5) 
  * registers. This dictates how the ADC processes the environment.
  * * @param bmp280 Pointer to the main device structure.
@@ -199,7 +197,7 @@ esp_err_t bmp280_set_config(bmp280_t *bmp280, const bmp280_config_t *config);
 
 /**
  * @brief Triggers a manual read cycle in FORCED mode.
- * * When operating in FORCED mode to save battery, the sensor remains asleep.
+ * * @details When operating in FORCED mode to save battery, the sensor remains asleep.
  * Calling this function overrides the mode register to trigger a single ADC 
  * conversion cycle. The sensor automatically returns to sleep afterward.
  * * @param bmp280 Pointer to the main device structure.
@@ -210,7 +208,7 @@ esp_err_t bmp280_force_measurement(bmp280_t *bmp280);
 
 /**
  * @brief Retrieves and compensates the latest temperature reading.
- * * Reads the 20-bit raw ADC temperature data and applies the manufacturer's 
+ * * @details Reads the 20-bit raw ADC temperature data and applies the manufacturer's 
  * compensation algorithm using the NVM trimming parameters. 
  * * @note Temperature must always be read before pressure, as the internal 
  * pressure compensation algorithm relies on the fine temperature factor 
@@ -224,7 +222,7 @@ esp_err_t bmp280_read_temperature(bmp280_t *bmp280, float *temperature);
 
 /**
  * @brief Performs a burst read for synchronized environmental data.
- * * Highly recommended over individual reads. It executes a single I2C burst 
+ * * @details Highly recommended over individual reads. It executes a single I2C burst 
  * transaction to fetch both raw temperature and pressure registers. This 
  * ensures data consistency (prevents reading temperature from cycle N and 
  * pressure from cycle N+1).
@@ -238,7 +236,7 @@ esp_err_t bmp280_read_measurements(bmp280_t *bmp280, float *temperature, float *
 
 /**
  * @brief Safely tears down the I2C bus and releases memory.
- * * Prevents memory leaks during hot-reloads or deep sleep preparations. 
+ * * @details Prevents memory leaks during hot-reloads or deep sleep preparations. 
  * It removes the device instance and then deletes the master bus instance.
  * * @param bmp280 Pointer to the main device structure.
  * @return 

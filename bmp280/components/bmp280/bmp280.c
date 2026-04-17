@@ -54,7 +54,8 @@ static const char *TAG = "BMP280_DRV";
  * @details Performs an I2C burst read of 24 bytes starting at address 0x88 
  * to reconstruct the 16-bit integers needed for Bosch's compensation formulas.
  *
- * @return 
+ * @param bmp280 Pointer to the BMP280 device descriptor.
+ * * @return 
  * - ESP_OK: Calibration data read and parsed successfully.
  * - Non-zero: I2C communication failure.
  */
@@ -67,10 +68,8 @@ static esp_err_t bmp280_read_calibration(bmp280_t *bmp280) {
     if (err != ESP_OK) 
     {
         ESP_LOGE("READ", "Failed to read calibration data");
-
         return err;
     }
-    ESP_LOGE("READ", "1");
 
     /* Reconstruct 16-bit integers by combining MSB and LSB */
     bmp280->calibration.dig_T1 = (uint16_t)((data[1] << 8) | data[0]);
@@ -87,7 +86,6 @@ static esp_err_t bmp280_read_calibration(bmp280_t *bmp280) {
     bmp280->calibration.dig_P8 = (int16_t) ((data[21] << 8) | data[20]);
     bmp280->calibration.dig_P9 = (int16_t) ((data[23] << 8) | data[22]);
 
-    ESP_LOGE("READ", "FIM");
     return ESP_OK;
 }
 
@@ -98,8 +96,9 @@ static esp_err_t bmp280_read_calibration(bmp280_t *bmp280) {
 /**
  * @brief Initializes the I2C bus and registers the BMP280 device.
  *
+ * @param bmp280 Pointer to the BMP280 device descriptor to be initialized.
  * @param config Pointer to the user-defined configuration profile.
- * @return esp_err_t ESP_OK on success, or specific error code.
+ * * @return esp_err_t ESP_OK on success, or specific error code.
  */
 esp_err_t bmp280_init(bmp280_t *bmp280, const bmp280_config_t *config){
     esp_err_t err;
@@ -166,8 +165,9 @@ esp_err_t bmp280_init(bmp280_t *bmp280, const bmp280_config_t *config){
 /**
  * @brief Applies oversampling, filter, and power mode settings.
  *
+ * @param bmp280 Pointer to the initialized BMP280 device descriptor.
  * @param config Pointer to the struct containing user preferences.
- * @return esp_err_t ESP_OK if registers were successfully written.
+ * * @return esp_err_t ESP_OK if registers were successfully written.
  */
 esp_err_t bmp280_set_config(bmp280_t *bmp280, const bmp280_config_t *config) {
     esp_err_t err;
@@ -225,7 +225,8 @@ esp_err_t bmp280_set_config(bmp280_t *bmp280, const bmp280_config_t *config) {
  * @details Utilizes a Read-Modify-Write pattern to inject the FORCED mode 
  * bit without overwriting previously configured oversampling settings.
  *
- * @return esp_err_t ESP_OK if the wake-up command was dispatched.
+ * @param bmp280 Pointer to the initialized BMP280 device descriptor.
+ * * @return esp_err_t ESP_OK if the wake-up command was dispatched.
  */
 esp_err_t bmp280_force_measurement(bmp280_t *bmp280){
     if(!bmp280){
@@ -250,7 +251,6 @@ esp_err_t bmp280_force_measurement(bmp280_t *bmp280){
         return err;
     }
     
-
     /* Step 2: Clear the 2 mode bits and inject FORCED mode */
     ctrl_meas_val = (ctrl_meas_val & ~0x03) | BMP280_MODE_FORCED;
 
@@ -271,8 +271,9 @@ esp_err_t bmp280_force_measurement(bmp280_t *bmp280){
 /**
  * @brief Reads raw temperature and applies the compensation formula.
  *
+ * @param bmp280 Pointer to the initialized BMP280 device descriptor.
  * @param temperature Pointer to store the calculated Celsius value.
- * @return esp_err_t ESP_OK upon successful read and computation.
+ * * @return esp_err_t ESP_OK upon successful read and computation.
  */
 esp_err_t bmp280_read_temperature(bmp280_t *bmp280, float *temperature){
     if(!bmp280 || !temperature){
@@ -328,9 +329,10 @@ esp_err_t bmp280_read_temperature(bmp280_t *bmp280, float *temperature){
  * @details Thread-safe polling method. Uses a Mutex to prevent concurrent
  * access to the I2C bus and the global t_fine variable.
  *
+ * @param bmp280 Pointer to the initialized BMP280 device descriptor.
  * @param temperature Pointer to store the compensated Celsius value.
  * @param pressure Pointer to store the compensated Pascals value.
- * @return esp_err_t ESP_OK on success, or ESP_ERR_TIMEOUT if bus is busy.
+ * * @return esp_err_t ESP_OK on success, or ESP_ERR_TIMEOUT if bus is busy.
  */
 esp_err_t bmp280_read_measurements(bmp280_t *bmp280, float *temperature, float *pressure) {
     if(!bmp280 || !temperature || !pressure){
@@ -414,7 +416,8 @@ esp_err_t bmp280_read_measurements(bmp280_t *bmp280, float *temperature, float *
  * @details Must be called to prevent memory leaks if the component is 
  * dynamically reinitialized or if the host shuts down.
  *
- * @return esp_err_t ESP_OK upon safe destruction of handles.
+ * @param bmp280 Pointer to the BMP280 device descriptor to be destroyed.
+ * * @return esp_err_t ESP_OK upon safe destruction of handles.
  */
 esp_err_t bmp280_deinit(bmp280_t *bmp280) {
     if(!bmp280){
