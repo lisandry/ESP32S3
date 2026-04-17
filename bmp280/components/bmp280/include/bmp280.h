@@ -119,22 +119,6 @@ typedef struct {
 } bmp280_config_t;
 
 /**
- * @brief Main device structure for runtime state and synchronization.
- * * Contains the user configuration for reference and a Mutex handle to 
- * ensure thread-safe access to the I2C bus and the global t_fine variable 
- * used in compensation calculations.
- */
-typedef struct {
-    bmp280_config_t config;             /**< Current hardware and logical configuration. */
-    SemaphoreHandle_t mutex;            /**< Mutex for thread-safe access to the sensor. */
-    int32_t t_fine;                     /**< Calibration bridge between temp and pressure. */
-    bmp280_calib_data calibration;      /**< Unique factory trimming parameters. */
-    
-    i2c_master_bus_handle_t bus_handle; /**< I2C physical bus handle. */
-    i2c_master_dev_handle_t dev_handle; /**< I2C device handle specific to this instance. */
-} bmp280_t;
-
-/**
  * @brief Factory trimming parameters for data compensation.
  * * Sensors exhibit minor manufacturing variations. These parameters are 
  * read from the chip's Non-Volatile Memory (NVM) during initialization and 
@@ -163,6 +147,24 @@ typedef struct {
     int16_t  dig_H5;
     int8_t   dig_H6;
 } bmp280_calib_data;
+
+/**
+ * @brief Main device structure for runtime state and synchronization.
+ * * Contains the user configuration for reference and a Mutex handle to 
+ * ensure thread-safe access to the I2C bus and the global t_fine variable 
+ * used in compensation calculations.
+ */
+typedef struct {
+    bmp280_config_t config;             /**< Current hardware and logical configuration. */
+    SemaphoreHandle_t mutex;            /**< Mutex for thread-safe access to the sensor. */
+    int32_t t_fine;                     /**< Calibration bridge between temp and pressure. */
+    bmp280_calib_data calibration;      /**< Unique factory trimming parameters. */
+    
+    i2c_master_bus_handle_t bus_handle; /**< I2C physical bus handle. */
+    i2c_master_dev_handle_t dev_handle; /**< I2C device handle specific to this instance. */
+} bmp280_t;
+
+
 
 /* ========================================================================== */
 /* PUBLIC API FUNCTIONS                                                       */
