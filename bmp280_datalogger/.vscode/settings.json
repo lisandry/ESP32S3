@@ -3,16 +3,16 @@
   "idf.openOcdConfigs": [
     "board/esp32-wrover-kit-3.3v.cfg"
   ],
-  "idf.portWin": "COM5",
+  "idf.portWin": "COM6",
   "idf.currentSetup": "C:\\esp\\v5.5.3\\esp-idf",
   "idf.customExtraVars": {
     "IDF_TARGET": "esp32"
   },
-  "clangd.path": "C:\\Users\\lisan\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
   "clangd.arguments": [
     "--background-index",
     "--query-driver=**",
-    "--compile-commands-dir=c:\\Users\\lisan\\ESP32S3\\bmp280\\build"
+    "--compile-commands-dir=c:\\Users\\lisan\\ESP32S3\\bmp280_datalogger\\build"
   ],
   "idf.flashType": "UART"
 }

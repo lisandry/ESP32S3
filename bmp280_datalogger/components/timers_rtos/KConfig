@@ -1,0 +1,17 @@
+menu "Configuração dos Timers do Sistema (GPTIMER)"
+
+    config SENSOR_TIMER_PERIOD_MS
+        int "Periodo da Task Sensores (ms)"
+        default 500
+        help
+            Define a periodicidade (em milissegundos) com que o timer de hardware 
+            vai gerar a interrupcao para acordar a task_sensores.
+
+    config STATUS_TIMER_PERIOD_MS
+        int "Periodo da Task Status (ms)"
+        default 2000
+        help
+            Define a periodicidade (em milissegundos) com que o timer de hardware 
+            vai gerar a interrupcao para acordar a task_status para gerar o relatorio.
+
+endmenu

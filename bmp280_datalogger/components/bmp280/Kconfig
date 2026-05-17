@@ -1,0 +1,64 @@
+menu "BMP280 Sensor Configuration"
+
+    config BMP280_I2C_SDA_PIN
+        int "I2C SDA GPIO Pin"
+        range 0 48
+        default 21
+        help
+            Pino GPIO utilizado para o sinal de dados I2C (SDA).
+            Altere este valor caso não esteja utilizando o ESP32 clássico 
+            (ex: para ESP32-S3 ou C3, verifique o pinout da sua placa).
+
+    config BMP280_I2C_SCL_PIN
+        int "I2C SCL GPIO Pin"
+        range 0 48
+        default 22
+        help
+            Pino GPIO utilizado para o sinal de clock I2C (SCL).
+
+    config BMP280_I2C_PORT_NUM
+        int "I2C Port Number"
+        range 0 1
+        default 0
+        help
+            Número da porta I2C de hardware a ser utilizada (0 ou 1 na maioria dos ESP).
+
+    choice BMP280_I2C_ADDRESS
+        prompt "BMP280 I2C Address"
+        default BMP280_I2C_ADDR_0x76
+        help
+            Selecione o endereço I2C do sensor BMP280.
+            - 0x76: Padrão na maioria dos módulos comerciais (pino SDO conectado ao GND).
+            - 0x77: Utilizado quando o pino SDO está conectado ao VDD.
+
+        config BMP280_I2C_ADDR_0x76
+            bool "0x76 (SDO to GND)"
+        config BMP280_I2C_ADDR_0x77
+            bool "0x77 (SDO to VDD)"
+    endchoice
+
+    choice BMP280_I2C_FREQ_SELECTION
+        prompt "I2C Clock Frequency"
+        default BMP280_I2C_FREQ_400K
+        help
+            Selecione a velocidade de comunicação do barramento I2C.
+            O BMP280 suporta nativamente os modos Standard, Fast e High Speed.
+
+        config BMP280_I2C_FREQ_100K
+            bool "100 kHz (Standard Mode)"
+            
+        config BMP280_I2C_FREQ_400K
+            bool "400 kHz (Fast Mode)"
+            
+        config BMP280_I2C_FREQ_1M
+            bool "1 MHz (Fast Mode Plus)"
+    endchoice
+
+    # Variável oculta que converte a escolha visual em um número inteiro (Hz)
+    config BMP280_I2C_FREQ_HZ
+        int
+        default 100000 if BMP280_I2C_FREQ_100K
+        default 400000 if BMP280_I2C_FREQ_400K
+        default 1000000 if BMP280_I2C_FREQ_1M
+
+endmenu
